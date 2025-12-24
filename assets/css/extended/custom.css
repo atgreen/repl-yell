@@ -1,0 +1,128 @@
+/* REPL Yell! - Custom Theme */
+
+:root {
+    --theme: #0d0d0d;
+    --entry: #1a1a1a;
+    --primary: #e6e6e6;
+    --secondary: #b0b0b0;
+    --tertiary: #2a2a2a;
+    --content: #d0d0d0;
+    --code-bg: #1a1a1a;
+    --border: #333;
+    --accent: #ff3333;
+}
+
+.dark {
+    --theme: #0d0d0d;
+    --entry: #1a1a1a;
+    --primary: #e6e6e6;
+    --secondary: #b0b0b0;
+    --tertiary: #2a2a2a;
+    --content: #d0d0d0;
+    --code-bg: #1a1a1a;
+    --border: #333;
+}
+
+/* Force dark theme */
+body {
+    background: #0d0d0d;
+}
+
+/* Bold headers with attitude */
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+/* Site title - make it scream */
+.logo a {
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+}
+
+/* Red accent on hover */
+a:hover {
+    color: #ff3333 !important;
+}
+
+.post-title:hover {
+    color: #ff3333 !important;
+}
+
+/* Entry cards */
+.post-entry {
+    border-left: 3px solid #ff3333;
+    border-bottom: none;
+}
+
+.post-entry:hover {
+    background: #1a1a1a;
+}
+
+/* Tags with edge */
+.post-tags a {
+    background: #1a1a1a;
+    border: 1px solid #ff3333;
+    color: #ff3333;
+}
+
+.post-tags a:hover {
+    background: #ff3333;
+    color: #0d0d0d;
+}
+
+/* Code blocks - terminal feel */
+pre {
+    border-left: 3px solid #ff3333;
+    background: #0a0a0a !important;
+}
+
+code {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+/* Home info section */
+.first-entry .entry-content {
+    font-size: 1.1em;
+    font-weight: 500;
+}
+
+/* Menu items */
+#menu a:hover {
+    color: #ff3333 !important;
+}
+
+/* Footer */
+.footer a:hover {
+    color: #ff3333;
+}
+
+/* Blockquotes */
+blockquote {
+    border-left: 3px solid #ff3333;
+    font-style: italic;
+}
+
+/* Selection */
+::selection {
+    background: #ff3333;
+    color: #0d0d0d;
+}
+
+/* Scroll bar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #0d0d0d;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #ff3333;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #cc2929;
+}
