@@ -8,6 +8,9 @@ theme = "PaperMod"
 
 [params]
   author = "Anthony Green"
+
+  [params.label]
+    text = "<span style='color:#ff3333'>REPL</span> <em style='color:#ff3333'>YELL!</em>"
   description = "More More More programming and technology musings"
   env = "production"
   defaultTheme = "dark"
@@ -21,7 +24,7 @@ theme = "PaperMod"
   TocOpen = false
 
   [params.homeInfoParams]
-    Title = "REPL Yell!"
+    Title = "<span style='color:#ff3333'>REPL</span> <em style='color:#ff3333'>YELL!</em>"
     Content = "More More More programming and technology musings."
 
   [[params.socialIcons]]
