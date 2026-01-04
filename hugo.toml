@@ -51,6 +51,11 @@ theme = "PaperMod"
     name = "Archives"
     url = "/archives/"
     weight = 30
+  [[menu.main]]
+    identifier = "about"
+    name = "About"
+    url = "/about/"
+    weight = 40
 
 [outputs]
   home = ["HTML", "RSS", "JSON"]
