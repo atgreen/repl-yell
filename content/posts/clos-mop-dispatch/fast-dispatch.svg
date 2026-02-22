@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" font-family="'JetBrains Mono', 'Fira Code', Consolas, monospace">
+  <defs>
+    <marker id="arrow2" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#999"/>
+    </marker>
+    <marker id="arrow2g" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#4a4"/>
+    </marker>
+  </defs>
+
+  <rect width="720" height="480" rx="8" fill="#111"/>
+
+  <text x="360" y="36" text-anchor="middle" fill="#e6e6e6" font-size="16" font-weight="bold">OpenLDK Fast Dispatch (java-generic-function)</text>
+
+  <!-- Call site -->
+  <rect x="250" y="56" width="220" height="44" rx="6" fill="#1a1a1a" stroke="#ff3333" stroke-width="2"/>
+  <text x="360" y="83" text-anchor="middle" fill="#ff3333" font-size="13">(my-method obj args...)</text>
+
+  <line x1="360" y1="100" x2="360" y2="130" stroke="#999" stroke-width="1.5" marker-end="url(#arrow2)"/>
+
+  <!-- Discriminating function -->
+  <rect x="180" y="130" width="360" height="44" rx="6" fill="#1a1a1a" stroke="#4a4" stroke-width="2"/>
+  <text x="360" y="150" text-anchor="middle" fill="#4a4" font-size="12">custom discriminating-function</text>
+  <text x="360" y="166" text-anchor="middle" fill="#888" font-size="11">(class-of receiver) -> hash lookup</text>
+
+  <!-- Fork: hit vs miss -->
+  <line x1="280" y1="174" x2="180" y2="214" stroke="#4a4" stroke-width="2" marker-end="url(#arrow2g)"/>
+  <line x1="440" y1="174" x2="540" y2="214" stroke="#999" stroke-width="1.5" marker-end="url(#arrow2)"/>
+
+  <!-- Cache HIT (fast path) -->
+  <rect x="60" y="214" width="240" height="44" rx="6" fill="#1a2a1a" stroke="#4a4" stroke-width="2"/>
+  <text x="180" y="241" text-anchor="middle" fill="#4a4" font-size="13">CACHE HIT: (funcall emfun)</text>
+  <text x="60" y="280" fill="#4a4" font-size="12" font-weight="bold">O(1)</text>
+  <text x="60" y="296" fill="#888" font-size="11">hash-table lookup</text>
+  <text x="60" y="312" fill="#888" font-size="11">+ direct funcall</text>
+
+  <!-- Cache MISS (slow path, once per class) -->
+  <rect x="420" y="214" width="260" height="44" rx="6" fill="#1a1a1a" stroke="#555" stroke-width="1.5"/>
+  <text x="550" y="241" text-anchor="middle" fill="#e6e6e6" font-size="13">CACHE MISS: compute + cache</text>
+
+  <line x1="550" y1="258" x2="550" y2="288" stroke="#999" stroke-width="1.5" marker-end="url(#arrow2)"/>
+
+  <!-- compute applicable methods (only on miss) -->
+  <rect x="390" y="288" width="320" height="36" rx="6" fill="#1a1a1a" stroke="#555" stroke-width="1"/>
+  <text x="550" y="311" text-anchor="middle" fill="#888" font-size="11">compute-applicable-methods-using-classes</text>
+
+  <line x1="550" y1="324" x2="550" y2="348" stroke="#999" stroke-width="1.5" marker-end="url(#arrow2)"/>
+
+  <!-- build effective method -->
+  <rect x="420" y="348" width="260" height="36" rx="6" fill="#1a1a1a" stroke="#555" stroke-width="1"/>
+  <text x="550" y="371" text-anchor="middle" fill="#888" font-size="11">build method chain lambda</text>
+
+  <line x1="550" y1="384" x2="550" y2="408" stroke="#999" stroke-width="1.5" marker-end="url(#arrow2)"/>
+
+  <!-- store in cache -->
+  <rect x="420" y="408" width="260" height="36" rx="6" fill="#1a1a1a" stroke="#4a4" stroke-width="1.5"/>
+  <text x="550" y="431" text-anchor="middle" fill="#4a4" font-size="11">store in dispatch-cache + call</text>
+
+  <text x="420" y="464" fill="#888" font-size="11">once per (generic-function, class) pair</text>
+
+  <!-- Legend -->
+  <rect x="60" y="340" width="12" height="12" rx="2" fill="#1a2a1a" stroke="#4a4" stroke-width="1.5"/>
+  <text x="80" y="351" fill="#888" font-size="11">fast path (typical)</text>
+  <rect x="60" y="360" width="12" height="12" rx="2" fill="#1a1a1a" stroke="#555" stroke-width="1.5"/>
+  <text x="80" y="371" fill="#888" font-size="11">slow path (first call only)</text>
+</svg>
