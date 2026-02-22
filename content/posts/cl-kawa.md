@@ -15,7 +15,7 @@ Here's how the turducken is assembled:
 
 **Java (the duck)**, the middle layer. My [OpenLDK](https://github.com/atgreen/openldk) project is a JIT compiler and runtime for Java written entirely in Common Lisp. It reads `.class` and `.jar` files and transpiles Java bytecode into Common Lisp code in memory. Java classes become CLOS classes. Java exceptions become Common Lisp conditions. No external JVM required. The entire Java runtime lives inside the Lisp image.
 
-**Kawa Scheme (the chicken)**, the innermost layer. [Kawa](https://www.gnu.org/software/kawa/) is Per Bothner's Scheme implementation from the GNU Project. Per and I used to work together at Cygnus Solutions, and I always enjoyed working with him. It compiles Scheme to Java bytecode. Normally it runs on a standard JVM, but here it runs on OpenLDK's Common Lisp JVM instead.
+**Kawa Scheme (the chicken)**, the innermost layer. [Kawa](https://www.gnu.org/software/kawa/) is a Scheme implementation from the GNU Project created by Per Bothner, who I had the pleasure of working with back at Cygnus Solutions. Kawa compiles Scheme to Java bytecode. Normally it runs on a standard JVM, but here it runs on OpenLDK's Common Lisp JVM instead.
 
 The execution chain: Scheme source is compiled by Kawa to Java bytecode, which OpenLDK transpiles to Common Lisp, which SBCL compiles to native x86-64 machine code. All within one process.
 
