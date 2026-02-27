@@ -19,7 +19,7 @@ SBCL's PCL (Portable Common Loops) implements the MOP's dispatch protocol. When 
 
 On a dfun cache miss, PCL falls back to the full MOP protocol: **`compute-applicable-methods-using-classes`** examines the class of *every* specializable argument against *every* defined method's specializers, the matching methods are **sorted by specificity** across all argument positions, and PCL builds an **effective method** — a compiled function that chains the primary and auxiliary methods together with `call-next-method` support. The result is folded back into the dfun so the next call with the same types is fast.
 
-In steady state this works fine. The problem is what happens when the method set changes. Every time you add a method or define a new class, PCL calls `update-dfun` to rebuild the discrimination net from scratch. During Clojure bootstrap, we're loading classes in a tight loop — the dfun never gets a chance to stabilize. Each class definition triggers `update-dfun` on every generic function that has methods specializing on that class or its ancestors. With thousands of methods on `<init>()`, each rebuild is expensive, and it happens thousands of times.
+In steady state this works fine. The problem is what happens when the method set changes. Every time you add a method or define a new class, PCL calls `update-dfun`, which recomputes the discriminating function and updates the dfun's internal caching structures. During Clojure bootstrap, we're loading classes in a tight loop — each class definition triggers `update-dfun` on every generic function that has methods specializing on that class or its ancestors. With thousands of methods on `<init>()`, the full MOP protocol runs on every cache miss, and the caches are constantly being invalidated. The cost adds up fast.
 
 ### What Java Actually Needs
 
@@ -65,7 +65,7 @@ The MOP protocol for customizing dispatch is `compute-discriminating-function`. 
               (funcall new-emfun args)))))))
 ```
 
-On a cache hit, it's two operations: `class-of` and a hash lookup. On a miss (the first call for each receiver class), it computes the effective method, caches it, and calls it. After that, every subsequent call for that class is O(1).
+On a cache hit, it's two operations: `class-of` and a hash lookup. On a miss (the first call for each receiver class), it computes the effective method, caches it, and calls it. After that, every subsequent call for that class is O(1). This is where the real performance win lives — replacing PCL's multi-dispatch dfun machinery with a single-dispatch hash-table cache.
 
 ![Fast dispatch flow](fast-dispatch.svg)
 
@@ -102,33 +102,39 @@ The cache miss path calls `%compute-java-effective-method`, which does call `com
 
 The trick with `class-list` is key: I only specialize on the receiver's actual class. Every other argument position gets `T`, the universal supertype. This tells the MOP "I don't care about these arguments for dispatch purposes" — which is exactly Java's single-dispatch semantics.
 
-### The Real Win: Short-Circuiting `update-dfun`
+### Cache Invalidation
 
-The custom discriminating function helps, but the single biggest performance win is intercepting PCL's `update-dfun`. This is the internal function that rebuilds the discrimination net, and PCL calls it every time a method is added, removed, or a relevant class is defined. During Clojure bootstrap, that means thousands of times.
+When methods are added, removed, or relevant classes are defined, SBCL's PCL calls `update-dfun` on the affected generic functions. For a `java-generic-function`, `update-dfun` calls our `compute-discriminating-function` — which is constant-time — and installs the result. No expensive discrimination net is rebuilt, because we've already replaced the dispatch machinery.
 
-For `java-generic-function` instances, I replace the expensive rebuild with a cache clear:
+But there's a subtlety: the discriminating function closes over the *same* hash-table objects in the GF's slots. If we don't clear those caches, stale effective methods will persist after the method set changes. The fix is to clear both caches inside `compute-discriminating-function` itself, since SBCL's `update-dfun` calls it whenever invalidation is needed:
 
 ```lisp
-(let ((original-update-dfun (fdefinition 'sb-pcl::update-dfun)))
-  (sb-ext:without-package-locks
-    (setf (fdefinition 'sb-pcl::update-dfun)
-          (lambda (gf &rest args)
-            (if (and (typep gf 'java-generic-function)
-                     (slot-boundp gf 'dispatch-cache))
-                (progn
-                  (bordeaux-threads:with-lock-held ((java-gf-cache-lock gf))
-                    (clrhash (java-gf-dispatch-cache gf))
-                    (clrhash (java-gf-invoke-special-cache gf)))
-                  (sb-mop:set-funcallable-instance-function
-                   gf (closer-mop:compute-discriminating-function gf)))
-                (apply original-update-dfun gf args))))))
+(defmethod closer-mop:compute-discriminating-function ((gf java-generic-function))
+  (let ((cache (java-gf-dispatch-cache gf))
+        (special-cache (java-gf-invoke-special-cache gf))
+        (lock (java-gf-cache-lock gf)))
+    ;; Clear stale caches — SBCL's update-dfun calls this whenever
+    ;; the method set changes.
+    (bordeaux-threads:with-lock-held (lock)
+      (clrhash cache)
+      (clrhash special-cache))
+    (lambda (&rest args)
+      (let* ((receiver (first args))
+             (class (class-of receiver))
+             (emfun (gethash class cache)))
+        (if emfun
+            (funcall emfun args)
+            (let ((new-emfun (%compute-java-effective-method gf class)))
+              (bordeaux-threads:with-lock-held (lock)
+                (setf (gethash class cache) new-emfun))
+              (funcall new-emfun args)))))))
 ```
 
 ![Cache invalidation flow](invalidation.svg)
 
-When PCL triggers `update-dfun` on a `java-generic-function`, instead of rebuilding a discrimination net, I clear both hash tables and reinstall the fast discriminating function. The caches repopulate lazily on the next call to each class. For non-Java generic functions, the original PCL logic runs as usual.
+The caches repopulate lazily on the next call for each receiver class. This keeps invalidation O(1) — a pair of hash-table clears — and the refill cost is amortized across subsequent calls.
 
-This is the difference between O(n) work on every class definition (where n is the method count) and O(1) work followed by amortized lazy cache fills.
+An earlier version of this code overrode SBCL's internal `sb-pcl::update-dfun` function directly, but [Christophe Rhodes pointed out](https://github.com/atgreen/openldk/issues/10) that this is unnecessary: since our `compute-discriminating-function` is already constant-time, `update-dfun` doesn't do any expensive work for `java-generic-function` instances. Moving the cache clearing into `compute-discriminating-function` where it belongs eliminated the need to touch PCL internals at all.
 
 ### Pre-Creating Hot Generic Functions
 
@@ -188,8 +194,8 @@ Each cache entry is a cons of `(method-function . next-methods)`, so calling a c
 
 This work was motivated by [cl-clojure](https://github.com/atgreen/cl-clojure), a project that runs Clojure inside Common Lisp via OpenLDK. Clojure's bootstrap loads a massive number of classes — the core library alone defines hundreds of `IFn` implementations, each with `invoke` methods at multiple arities. Without the MOP customization, PCL spent more time rebuilding discrimination nets than doing useful work. With it, getting to a Clojure REPL went from 2 hours 45 minutes to 2 minutes 40 seconds.
 
-The whole fix is about 120 lines of Common Lisp in a single file (`src/java-gf.lisp`), plus a few `ensure-generic-function` calls sprinkled through the bootstrap code. It touches exactly one internal PCL function (`update-dfun`), and it leaves all non-Java generic functions completely untouched.
+The whole fix is about 100 lines of Common Lisp in a single file (`src/java-gf.lisp`), plus a few `ensure-generic-function` calls sprinkled through the bootstrap code. It doesn't touch any SBCL internals, and it leaves all non-Java generic functions completely untouched.
 
-What I like about this solution is that it's the MOP working as designed. Gregor Kiczales and the AMOP authors built the Meta-Object Protocol specifically so you could do this kind of thing — swap out pieces of the object system's implementation without forking the runtime. I didn't patch SBCL. I didn't write a custom compiler. I subclassed `standard-generic-function`, specialized one MOP generic function, and intercepted one internal PCL function. The rest of CLOS keeps working exactly as before.
+What I like about this solution is that it's the MOP working as designed. Gregor Kiczales and the AMOP authors built the Meta-Object Protocol specifically so you could do this kind of thing — swap out pieces of the object system's implementation without forking the runtime. I didn't patch SBCL. I didn't write a custom compiler. I subclassed `standard-generic-function` and specialized two MOP generic functions (`compute-discriminating-function` and `compute-applicable-methods-using-classes` via `%compute-java-effective-method`). The rest of CLOS keeps working exactly as before.
 
 The source is at [github.com/atgreen/openldk](https://github.com/atgreen/openldk).
