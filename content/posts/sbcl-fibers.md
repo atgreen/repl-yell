@@ -2459,7 +2459,7 @@ the entire scheduler.  Pinning also defeats load balancing: work
 stealing cannot redistribute pinned fibers, so carriers become
 unevenly loaded.
 
-**Alternative: pure-TLS.** [pure-tls](https://github.com/puercopop/pure-tls)
+**Alternative: pure-tls.** [pure-tls](https://github.com/atgreen/pure-tls)
 is a TLS 1.3 implementation written entirely in Common Lisp, with no
 foreign (C/OpenSSL) dependencies.  Because it uses only Lisp-level
 I/O and data structures, there is no thread-local foreign state ---
