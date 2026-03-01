@@ -300,7 +300,8 @@ it up.
 **`function`** --- a function of no arguments.  This is the fiber's
 entry point.  When it returns normally, the return value becomes the
 fiber's result (retrievable via `fiber-result`).  If it signals an
-unhandled error, the condition object becomes the result instead.
+unhandled error, the condition object becomes the result and the
+fiber's `errorp` flag is set (see `fiber-error-p`).
 
 **`name`** --- an optional string for debugging.  Appears in
 `print-object` output and backtrace annotations.
@@ -421,10 +422,26 @@ condition becomes true.
 (fiber-join target &key timeout)
 ```
 
-Waits until the fiber `target` completes and returns its result
-(the return value of the fiber's function, or the condition object if
-it signaled an error).  Returns `nil` if the timeout expires first.
+Waits until the fiber `target` completes and returns two values:
+
+1. The **result** --- the return value of the fiber's function, or the
+   condition object if it signaled an error.
+2. A boolean **errorp** --- `T` if the fiber terminated due to an
+   unhandled error, `NIL` for a normal return.
+
+Returns `nil` (single value) if the timeout expires first.
 A fiber cannot join itself.
+
+The two-value protocol is analogous to `ignore-errors`, so callers can
+distinguish a fiber that intentionally returned a condition object from
+one that signaled an error:
+
+```lisp
+(multiple-value-bind (result errorp) (fiber-join child)
+  (if errorp
+      (format t "Fiber failed: ~A~%" result)
+      (format t "Fiber returned: ~S~%" result)))
+```
 
 `fiber-join` works from two contexts:
 
@@ -661,11 +678,13 @@ or deadline), or `:dead` (function returned or signaled).
 ```lisp
 (fiber-name fiber)     => string-or-nil
 (fiber-result fiber)   => value
+(fiber-error-p fiber)  => boolean
 (fiber-alive-p fiber)  => boolean
 ```
 
 `fiber-result` returns the fiber's result value (or condition object)
-after death.  `fiber-alive-p` is shorthand for
+after death.  `fiber-error-p` returns `T` if the fiber terminated due
+to an unhandled error.  `fiber-alive-p` is shorthand for
 `(not (eq (fiber-state fiber) :dead))`.
 
 ```lisp
@@ -726,6 +745,7 @@ starved.
 | `fiber-state` | Return fiber's lifecycle state |
 | `fiber-name` | Return fiber's name |
 | `fiber-result` | Return fiber's result value |
+| `fiber-error-p` | Check if fiber terminated with an error |
 | `fiber-alive-p` | Check if fiber is not dead |
 | `list-all-fibers` | Snapshot of all live fibers |
 | `fiber-get-backtrace` | Backtrace for suspended fiber |
@@ -1923,15 +1943,16 @@ fiber_switch → fiber_entry_trampoline (asm)
      (handler-case
          (setf (fiber-result fiber) (funcall (fiber-function fiber)))
        (error (c)
-         (setf (fiber-result fiber) c)))
+         (setf (fiber-result fiber) c
+               (fiber-errorp fiber) t)))
   ;; cleanup forms ...
   )
 ```
 
 If the user function returns normally, its return value is stored as
 the fiber's result.  If it signals an unhandled error, the condition
-object becomes the result.  Either way, execution reaches the
-`unwind-protect` cleanup.
+object becomes the result and the `errorp` flag is set.  Either way,
+execution reaches the `unwind-protect` cleanup.
 
 ### 12.2 Error Handling and Result Capture
 
@@ -1942,11 +1963,12 @@ all other fibers on that carrier).
 
 The captured condition or return value is stored in `fiber-result`
 and can be retrieved by `fiber-join` or directly after the fiber is
-dead.  Currently, `fiber-result` returns a single value, so a fiber
-that intentionally returns a condition object as its value is
-indistinguishable from one that signaled an error.  A future
-revision may return two values (result, errorp) analogous to
-`ignore-errors`.
+dead.  When an error is caught, the fiber's `errorp` flag is set to
+`T`.  The predicate `fiber-error-p` returns this flag, and
+`fiber-join` returns it as a second value (analogous to
+`ignore-errors`), so callers can distinguish a fiber that
+intentionally returned a condition object from one that signaled an
+error.
 
 Non-local exits via `throw`, `return-from`, or `go` that target
 tags or blocks within the fiber's own function work normally --- the
