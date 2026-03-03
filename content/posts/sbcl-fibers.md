@@ -7,8 +7,11 @@ summary: "A draft design document describing lightweight userland cooperative th
 
 > **This is a work-in-progress draft document** describing lightweight
 > userland cooperative threads for SBCL.  The implementation is under
-> active development and details may change.  You can try it out on the
-> `fibers` branch at [github.com/atgreen/sbcl](https://github.com/atgreen/sbcl/tree/fibers).
+> active development and details may change.  This is a living
+> document --- you can view its
+> [revision history](https://github.com/atgreen/repl-yell/commits/main/content/posts/sbcl-fibers.md).
+> You can try it out on the
+> `fibers-v2` branch at [github.com/atgreen/sbcl](https://github.com/atgreen/sbcl/tree/fibers-v2).
 
 
 ## Table of Contents
@@ -45,7 +48,7 @@ summary: "A draft design document describing lightweight userland cooperative th
    3. Data Flow: Yield and Resume
 
 4. **Context Switching**
-   1. Register Save/Restore Convention (x86-64, ARM64)
+   1. Register Save/Restore Convention
    2. The `fiber_switch` Assembly Routine
    3. Stack Frame Initialization for New Fibers
    4. The Entry Trampoline (Assembly to C to Lisp)
@@ -123,6 +126,7 @@ summary: "A draft design document describing lightweight userland cooperative th
     5. Pinned Blocking Fallback to OS Primitives
     6. `*pinned-blocking-action*` Warning/Error Policy
     7. `interrupt-thread`
+    8. Debugger Integration
 
 14. **Performance**
     1. HTTP Benchmark
@@ -134,8 +138,12 @@ summary: "A draft design document describing lightweight userland cooperative th
 15. **Platform Support**
     1. x86-64 (Linux, macOS, Windows)
     2. ARM64
-    3. Feature Flag: `:sb-fiber`
-    4. Platform-Specific Assembly and I/O Backends
+    3. ARM32
+    4. PPC64
+    5. PPC32
+    6. RISC-V
+    7. Feature Flag: `:sb-fiber`
+    8. Platform-Specific Assembly and I/O Backends
 
 **Appendix A: Using Hunchentoot with Fibers**
    1. The Fiber Taskmaster
@@ -688,15 +696,17 @@ to an unhandled error.  `fiber-alive-p` is shorthand for
 `(not (eq (fiber-state fiber) :dead))`.
 
 ```lisp
-(fiber-get-backtrace fiber) => list
+(print-fiber-backtrace fiber &key stream count)
 ```
 
-Returns a backtrace for a suspended or created fiber as a list of
-`(code-component . offset)` pairs (for Lisp frames) or raw PC values
-(for foreign frames).  This walks the fiber's saved frame pointer
-chain on its control stack.  Only works for `:suspended` or `:created`
-fibers; signals an error for fibers that are currently running
-(their stack is live on a carrier and being actively modified).
+Prints a full symbolic backtrace for a suspended fiber, using SBCL's
+standard debugger infrastructure.  Produces the same human-readable
+output as `print-backtrace` --- function names, arguments, source
+locations, and local variables.  Internally it binds the debug stack
+bounds to the fiber's control stack and walks frames starting from
+`fiber-top-frame`.  Only works for `:suspended` or `:created` fibers;
+a running fiber's stack is live on a carrier and being actively
+modified.
 
 ### 2.11 Idle Hooks
 
@@ -748,7 +758,7 @@ starved.
 | `fiber-error-p` | Check if fiber terminated with an error |
 | `fiber-alive-p` | Check if fiber is not dead |
 | `list-all-fibers` | Snapshot of all live fibers |
-| `fiber-get-backtrace` | Backtrace for suspended fiber |
+| `print-fiber-backtrace` | Symbolic backtrace for suspended fiber |
 | `*current-fiber*` | Dynamic variable: current fiber |
 | `*current-scheduler*` | Dynamic variable: current scheduler |
 | `*pinned-blocking-action*` | Policy for pinned blocking (`:warn`, `:error`, `nil`) |
@@ -859,7 +869,7 @@ A complete yield-and-resume cycle involves these steps:
 
 ## 4. Context Switching
 
-### 4.1 Register Save/Restore Convention (x86-64, ARM64)
+### 4.1 Register Save/Restore Convention
 
 The fiber context switch saves only the callee-saved registers defined
 by the platform ABI.  This is the minimum set that a C or Lisp
@@ -883,6 +893,12 @@ are clobbered) or are restored by normal function return.
 
 **PPC64 (ELFv2)**: 320 bytes
 - LR, CR, `r14`-`r31` (18 GPRs), `f14`-`f31` (18 FPRs)
+
+**PPC32**: 240 bytes
+- LR, CR, `r14`-`r31` (18 GPRs × 4 bytes), `f14`-`f31` (18 FPRs × 8 bytes)
+
+**RISC-V (RV64)**: 208 bytes
+- `ra`, `cfp` (for debugger), `s0`-`s11` (12 GPRs), `fs0`-`fs11` (12 FPRs)
 
 The choice to save only callee-saved registers (rather than the full
 register file) is the primary reason fiber switches are fast.  A
@@ -2133,6 +2149,34 @@ To communicate with a fiber, use fiber-aware primitives: signal a
 condition variable, set a flag checked by a `fiber-park` predicate,
 or submit a new fiber to the scheduler group.
 
+### 13.8 Debugger Integration
+
+SBCL's standard debugger operates on the current thread's control
+stack.  Since fibers have their own control stacks, several debugger
+internals are extended for fiber awareness:
+
+- **`control-stack-pointer-valid-p`** checks
+  `*debug-control-stack-start/end*` when bound, so frame-walking code
+  validates pointers against the fiber's stack rather than the
+  carrier's.
+
+- **`with-fiber-debug-bounds`** binds the debug stack bounds to a
+  fiber's control stack region, enabling `frame-down` and other
+  debugger functions to walk the fiber's frames.
+
+- **`fiber-top-frame`** extracts the frame pointer and return address
+  from the fiber's `fiber-switch` save area (architecture-specific
+  offsets) and calls `compute-calling-frame` to produce the initial
+  `compiled-frame` object.
+
+- **`frame-down`** stops when it encounters `fiber_run_and_finish` in
+  the call chain, since that is the absolute bottom of a fiber's
+  stack.
+
+- **`print-fiber-backtrace`** combines these pieces: it binds the
+  debug bounds, gets the top frame, and delegates to
+  `print-backtrace` for full symbolic output.
+
 ## 14. Performance
 
 Native Linux threads are highly performant.  With modern kernels, a
@@ -2285,7 +2329,34 @@ store/load pattern).  Thread register is `x21`.
 I/O multiplexing depends on the OS: `epoll` on Linux, `kqueue` on
 iOS/macOS (via the BSD layer).
 
-### 15.3 Feature Flag: `:sb-fiber`
+### 15.3 ARM32
+
+Full support with 104-byte register save frame.  Saves VFP registers
+`d8`-`d15` (64 bytes) and GPRs `r3`-`r11`, `lr` (40 bytes).  Thread
+register is `r10`.  Uses `blx` for indirect calls.
+
+### 15.4 PPC64
+
+Full support with 320-byte register save frame.  Saves LR, CR, 18
+callee-saved GPRs (`r14`-`r31`), and 18 callee-saved FPRs
+(`f14`-`f31`).  Thread register is `r30`.  Frame includes backchain
+pointer for ABI compliance.
+
+### 15.5 PPC32
+
+Full support with 240-byte register save frame.  Same register set as
+PPC64 but with 4-byte GPRs: LR, CR, `r14`-`r31` (72 bytes),
+`f14`-`f31` (144 bytes).  Thread register is `r17`
+(`thread-base-tn`).
+
+### 15.6 RISC-V (RV64)
+
+Full support with 208-byte register save frame.  Saves `ra`, `cfp`
+(for debugger backtraces), `s0`-`s11` (12 GPRs), and `fs0`-`fs11`
+(12 FPRs).  Thread register is `s10` (`r26`).  Uses `sd`/`ld` for
+GPRs and `fsd`/`fld` for FPRs.
+
+### 15.7 Feature Flag: `:sb-fiber`
 
 Fiber support is controlled by the `:sb-fiber` feature.  When absent,
 all fiber code is excluded via `#+sb-fiber` reader conditionals.  The
@@ -2296,7 +2367,7 @@ the `fiber.c`/`fiber.h` runtime files are not linked.
 To enable fibers, add `:sb-fiber` to
 `local-target-features.lisp-expr` before building SBCL.
 
-### 15.4 Platform-Specific Assembly and I/O Backends
+### 15.8 Platform-Specific Assembly and I/O Backends
 
 Each supported architecture has its own assembly file:
 
@@ -2306,6 +2377,8 @@ Each supported architecture has its own assembly file:
 | ARM64 | `src/assembly/arm64/fiber.lisp` | 160 bytes |
 | ARM32 | `src/assembly/arm/fiber.lisp` | 104 bytes |
 | PPC64 | `src/assembly/ppc64/fiber.lisp` | 320 bytes |
+| PPC32 | `src/assembly/ppc/fiber.lisp` | 240 bytes |
+| RISC-V | `src/assembly/riscv/fiber.lisp` | 208 bytes |
 
 I/O backends:
 
