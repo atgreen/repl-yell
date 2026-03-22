@@ -209,6 +209,22 @@ For the file-based workflow:
 
 Or skip the file entirely with `with-bpf-session`.
 
+### Polyglot userspace
+
+Not everything has to be Lisp. If you prefer to write the userspace
+side in Go, C, Rust, or Python, Whistler can generate matching struct
+definitions from the same `defstruct` declarations used in the BPF
+program:
+
+```sh
+whistler compile probes.lisp --gen c go rust python
+```
+
+This produces header files with struct layouts guaranteed to match the
+BPF side, since both are derived from the same source. You compile the
+BPF with Whistler and write the loader in whatever language your team
+already uses.
+
 ### Permissions without root
 
 You don't need root. Grant capabilities to SBCL:
