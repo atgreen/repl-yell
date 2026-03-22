@@ -239,9 +239,9 @@ compilation with `deftracepoint`.
 
 ### Why this matters
 
-The traditional eBPF workflow is: write C, compile with clang, load
-with a separate binary (Go, Rust, Python), read maps from that binary.
-Four languages, three build steps, multiple processes.
+The traditional eBPF workflow is: write C for the BPF side, compile
+with clang, then write Go or Rust or Python for the userspace side.
+Two languages, separate build steps, multiple processes.
 
 With Whistler 1.0, the workflow is: write Lisp. The compiler, loader,
 and userspace application share a process. You can develop at the REPL —
