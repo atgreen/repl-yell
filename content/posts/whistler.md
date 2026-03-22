@@ -102,8 +102,8 @@ COUNT       COMM              SIGNATURE
        ...
 ```
 
-No `.bpf.o` file was created. No C was compiled. No Go loader was
-written. One language, one process, one REPL.
+Everything happened inside one SBCL process. The BPF bytecode never
+touched disk.
 
 ### How it works
 
@@ -183,14 +183,14 @@ Whistler can import definitions directly from the running kernel.
 ;;            +task-struct-size+ → 9856
 ```
 
-This requires no kernel headers, no vmlinux.h, and no CO-RE
-ceremony. Offsets resolve from your running kernel at compile time.
+Offsets resolve from your running kernel at compile time — kernel
+headers and vmlinux.h are unnecessary.
 
 ### The loader is pure CL too
 
 `whistler/loader` is a complete BPF userspace loader written in Common
-Lisp — no libbpf, no CFFI, no C dependencies. It uses SBCL's `sb-alien`
-for direct syscall access:
+Lisp with zero C dependencies. It uses SBCL's `sb-alien` for direct
+syscall access:
 
 - ELF parser for `.bpf.o` files
 - BPF map creation and operations (lookup, update, delete, iterate)
