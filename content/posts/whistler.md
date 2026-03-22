@@ -2,25 +2,53 @@
 title: "Whistler: Live eBPF Programming from the Common Lisp REPL"
 date: 2026-03-22
 tags: ["common-lisp", "ebpf", "compilers", "observability", "linux"]
-summary: "Writing, compiling, loading, and querying eBPF programs in one Lisp form — no files, no build step, no C."
+summary: "Writing, compiling, loading, and querying eBPF programs in one Lisp form."
 ---
 
-What if you could write a kernel probe at the REPL, attach it to a
-running system, and query the results — all without leaving your Lisp
-session?
+A string of recent experiments around observability and security for
+agentic AI systems led me down the eBPF rabbit-hole. When I emerged,
+I came back with a full optimizing compiler for a Common Lisp-based
+DSL for eBPF called [Whistler](https://github.com/atgreen/whistler).
 
-[Whistler](https://github.com/atgreen/whistler) started as an eBPF
-compiler. It's now an entire platform: compiler, loader, and inline
-session runtime, all in pure Common Lisp. Version 1.0 ships with
-`with-bpf-session`, a macro that compiles BPF code at macroexpand
-time, loads it into the kernel at runtime, and gives you live access
-to maps and events from your REPL.
+Whistler lets you write shorter code, with less ceremony than eBPF C
+code, and still produce highly-optimized eBPF output, equivalent or
+better than clang. And Whistler generates those ELF eBPF files
+directly, without any of the eBPF clang+llvm toolchain.
 
-### The whole stack in one form
+In addition to generating object code files directly, and loading them
+in the traditional way, you can actually inline Whistler code directly
+in your Common Lisp programs and have them compiled/loaded/unloaded as
+part of your traditional REPL process, where no object file even lands
+on disk.
 
-Here's a complete program that attaches a uprobe to `ffi_call` in
-libffi, counts calls by signature, and dumps stats when you hit
-Ctrl-C:
+### A taste
+
+Here's a kprobe that counts every `execve` call on the system:
+
+```lisp
+(with-bpf-session ()
+  (bpf:map counter :type :hash :key-size 4 :value-size 8 :max-entries 1)
+  (bpf:prog trace (:type :kprobe
+                    :section "kprobe/__x64_sys_execve"
+                    :license "GPL")
+    (incf (getmap counter 0))
+    0)
+  (bpf:attach trace "__x64_sys_execve")
+  (loop (sleep 1)
+        (format t "execve count: ~d~%" (bpf:map-ref counter 0))))
+```
+
+That's a complete, runnable program. The `bpf:prog` body compiles to
+eBPF bytecode *during macroexpansion*. The bytecode is embedded as a
+literal in the expansion. At runtime, the map is created, the program
+is loaded into the kernel, and the probe is attached. The `loop` at
+the bottom is plain Common Lisp, polling the map every second.
+
+### A real-world example
+
+Here's something more substantial — a uprobe that traces every
+`ffi_call` invocation in libffi, counting calls by program name and
+function signature:
 
 ```lisp
 (with-bpf-session ()
@@ -57,16 +85,6 @@ Ctrl-C:
       ...)))
 ```
 
-When you load this file, here's what happens:
-
-1. SBCL reads the `with-bpf-session` form
-2. The macro expander compiles the `bpf:prog` body to eBPF bytecode at
-   macroexpand time — the Whistler compiler runs inside the expander
-3. The bytecode is embedded as a literal array in the macro expansion
-4. At runtime: maps are created, the program is loaded into the kernel,
-   the uprobe is attached
-5. The CL code runs: sleep/poll loop, Ctrl-C handler, map iteration
-
 The output:
 
 ```
@@ -85,7 +103,7 @@ COUNT       COMM              SIGNATURE
 ```
 
 No `.bpf.o` file was created. No C was compiled. No Go loader was
-written. One Lisp file, one language, one process.
+written. One language, one process, one REPL.
 
 ### How it works
 
@@ -100,8 +118,12 @@ Forms prefixed with `bpf:` are declarations for the BPF compiler:
 Everything else is normal Common Lisp. The boundary is syntactic, not
 semantic — both sides share the same Lisp image.
 
-The compiler runs during macroexpansion, which means you get
-compile-time errors with context:
+The key insight: the Whistler compiler runs during macroexpansion. By
+the time SBCL compiles the `with-bpf-session` form, the eBPF bytecode
+is already a constant — embedded as a literal byte array in the
+expansion. The runtime code just creates maps, patches FD relocations,
+and calls `bpf(BPF_PROG_LOAD, ...)`. And because it all runs during
+macroexpansion, you get compile-time errors with context:
 
 ```
   error: narrow type U8 passed as pointer to PROBE-READ
@@ -161,8 +183,8 @@ Whistler can import definitions directly from the running kernel.
 ;;            +task-struct-size+ → 9856
 ```
 
-No kernel headers, no vmlinux.h, no CO-RE ceremony. Offsets resolve from
-your running kernel at compile time.
+This requires no kernel headers, no vmlinux.h, and no CO-RE
+ceremony. Offsets resolve from your running kernel at compile time.
 
 ### The loader is pure CL too
 
@@ -210,7 +232,4 @@ and userspace application share a process. You can develop at the REPL —
 modify a probe, re-eval the form, see results immediately. The feedback
 loop is instant.
 
-eBPF is the most powerful observability and security mechanism in Linux.
-The tooling shouldn't be harder than the ideas. With Whistler, it isn't.
-
-The code is on [GitHub](https://github.com/atgreen/whistler).
+Check it out on [GitHub](https://github.com/atgreen/whistler).
