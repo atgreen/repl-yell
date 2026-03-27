@@ -153,3 +153,5 @@ Is it faster than OpenSSL? No. OpenSSL has decades of optimization and often use
 - **Security posture**: No C code greatly reduces the risk of buffer overflows
 
 The code is MIT licensed and available at [github.com/atgreen/pure-tls](https://github.com/atgreen/pure-tls), and you can install it with `ocicl install pure-tls`.
+
+Discuss on [Hacker News](https://news.ycombinator.com/item?id=46496308) or [Lobsters](https://lobste.rs/s/za0nkg/building_tls_1_3_implementation_pure).

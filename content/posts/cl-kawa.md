@@ -96,3 +96,5 @@ cl-kawa depends on:
 - **Java 8 JDK**, for bootstrap classes
 
 The code is MIT licensed and available at [github.com/atgreen/cl-kawa](https://github.com/atgreen/cl-kawa).
+
+Discuss on [Hacker News](https://news.ycombinator.com/item?id=47107664) or [Lobsters](https://lobste.rs/s/pvfqcr/cl_kawa_turducken_programming_languages).

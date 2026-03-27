@@ -143,3 +143,5 @@ git clone https://github.com/atgreen/pure-tls.git
 The integration is in the `acme/` directory. Load `pure-tls/acme+hunchentoot` for the full Hunchentoot integration, or just `pure-tls/acme` if you want to use the ACME client directly with your own server.
 
 As with pure-tls itself, this is new code. Test with Let's Encrypt staging first, and please [report any issues](https://github.com/atgreen/pure-tls/issues) you encounter. The goal is a complete, pure-Lisp HTTPS server stack - and automatic certificate management is a critical piece of that puzzle.
+
+Discuss on [Hacker News](https://news.ycombinator.com/item?id=46554138) or [Lobsters](https://lobste.rs/s/yvgsct/automatic_tls_certificates_for_common).

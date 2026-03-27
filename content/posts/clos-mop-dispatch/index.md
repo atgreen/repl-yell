@@ -199,3 +199,5 @@ The whole fix is about 100 lines of Common Lisp in a single file (`src/java-gf.l
 What I like about this solution is that it's the MOP working as designed. Gregor Kiczales and the AMOP authors built the Meta-Object Protocol specifically so you could do this kind of thing — swap out pieces of the object system's implementation without forking the runtime. I didn't patch SBCL. I didn't write a custom compiler. I subclassed `standard-generic-function` and specialized two MOP generic functions (`compute-discriminating-function` and `compute-applicable-methods-using-classes` via `%compute-java-effective-method`). The rest of CLOS keeps working exactly as before.
 
 The source is at [github.com/atgreen/openldk](https://github.com/atgreen/openldk).
+
+Discuss on [Hacker News](https://news.ycombinator.com/item?id=47114131).

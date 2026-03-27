@@ -2614,3 +2614,5 @@ concurrent connections (e.g., to bound memory), add a semaphore:
                (hunchentoot:process-connection acceptor socket)
             (sb-thread:signal-semaphore *connection-semaphore*)))
         :name "hunchentoot-worker"))))
+
+Discuss on [Hacker News](https://news.ycombinator.com/item?id=47382398).
