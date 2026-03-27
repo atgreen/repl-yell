@@ -249,3 +249,5 @@ modify a probe, re-eval the form, see results immediately. The feedback
 loop is instant.
 
 Check it out on [GitHub](https://github.com/atgreen/whistler).
+
+Discuss on [Hacker News](https://news.ycombinator.com/item?id=47495190) or [Lobsters](https://lobste.rs/s/1dufuw/whistler_live_ebpf_programming_from).
