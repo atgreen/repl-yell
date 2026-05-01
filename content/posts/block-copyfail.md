@@ -24,7 +24,7 @@ hooks `socket_bind` and blocks the exploit at runtime. Just run it,
 and you're protected.
 
 And this is a surgical mitigation. On every socket open, if the socket
-family `AF_ALG` and the algorithm name `authencesn`, return
+family is `AF_ALG` and the algorithm name is `authencesn`, return
 `-EPERM`. Everything else passes through untouched (dm-crypt, openssl
 afalg, etc).  The only thing that stops working is the one algorithm
 template that gets you rooted.
