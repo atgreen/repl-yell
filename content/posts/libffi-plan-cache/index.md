@@ -106,3 +106,7 @@ Around 90% of the calls are pure 64-bit-GP, pointers and longs, which is the thu
 This all lives on the HEAD of the libffi git tree, not in any release, and it needs more testing before it's something to build on. The acceleration is x86-64 only, but the API is portable: everywhere else `ffi_call_plan_invoke` just calls `ffi_call`, so a binding can build a plan for every signature unconditionally and take the accelerated path where it exists, no `#ifdef` on its side. Whether the fast path is worth building for other ABIs isn't clear: the payoff is proportional to how much per-call classification there is to skip, and that varies a lot between calling conventions.
 
 The code is on GitHub: [libffi](https://github.com/libffi/libffi).
+
+---
+
+*Edited for clarity after publishing: [`6fed8af`](https://github.com/atgreen/repl-yell/commit/6fed8af311fca8256b23673089da42e5beaf0cee).*
