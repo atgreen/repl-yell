@@ -7,11 +7,9 @@ summary: "libffi re-derives the same argument layout on every call. A new API le
 
 libffi is a function call interpreter. You hand it a description of a function's signature at runtime, and it works out, on the spot, how to place each argument and make the call. It interprets the calling convention the way a bytecode VM interprets instructions. Nothing is compiled ahead of time, because the whole point is that you don't know the signature ahead of time.
 
-An interpreter is not what you reach for when you want speed. That is what JIT compilation is for, and some systems choose it instead.
+An interpreter is not what you reach for when you want speed. The usual answer is to JIT: compile a bespoke call stub for each signature, native code that drops the arguments into their registers and jumps, with nothing left to interpret at runtime. It's quicker, but it gets there by writing fresh machine code into memory that's both writable and executable, which is exactly what modern systems are trying to stamp out.
 
-A runtime can JIT-compile a bespoke call stub for each signature, native code that drops the arguments into registers and jumps, with no interpretation left at runtime. It's quicker, but it works by generating code at runtime into memory that's both writable and executable, which is exactly what modern systems are trying to stamp out.
-
-So libffi stays an interpreter, on purpose. The question I set out to answer was how much faster it could get that way, by making better use of what it already knows instead of generating code at runtime or mapping any page writable and executable.
+So libffi stays an interpreter, on purpose. The question I set out to answer was how much faster it could get that way, by reusing what it already knows instead of generating code at runtime or mapping any page writable and executable.
 
 ## The waste
 
@@ -19,7 +17,7 @@ When you call a function through libffi, the work splits across two places. `ffi
 
 So on *every* `ffi_call`, the marshalling code walks the argument list again and re-derives that placement from scratch before copying the values into place. For a three-argument call on x86-64 that's around 650 instructions of bookkeeping, and it produces the identical answer every single time.
 
-Most of those instructions aren't moving argument bytes. They're deciding where the bytes go. The x86-64 calling convention has genuine rules, and applying them to a single argument means walking its type, recursing into a struct's fields and chasing the pointers in its type descriptor, sorting each 8-byte chunk into an integer or floating-point register class, and checking whether it still fits in the registers that are left or has to spill to the stack. That is branch-heavy, pointer-chasing work, the sort a CPU runs slowly, and it reruns on every call to compute a placement that never changes.
+Most of those instructions aren't moving argument bytes. They're deciding where the bytes go. The System V AMD64 ABI classifies every argument by a fixed procedure, and running that procedure on a single argument means walking its type, recursing into a struct's fields and chasing the pointers in its type descriptor, sorting each 8-byte chunk into an INTEGER or SSE register class, and checking whether it still fits in the registers that are left or has to spill to the stack. That is branch-heavy, pointer-chasing work, the sort a CPU runs slowly, and it reruns on every call to compute a placement that never changes.
 
 But function argument placement is a pure function of the signature. We can compute it once, remember it, and skip the work on every later call.
 
@@ -40,6 +38,8 @@ long (void *, void *, void *)    long (void *, int, void *)
 ```
 
 When every argument is a single 64-bit value in a general register, which is most pointer-passing code, the plan doesn't even need the interpreter. It's marked thunk-eligible, and a small hand-written thunk in `.text` loads the values straight from the argument array into the argument registers and calls. It skips the move loop, the intermediate register image, and the copying back and forth entirely. The call on the right keeps an `int`, so it needs the sign-extend, so it runs the move loop instead.
+
+There's a subtlety in *running* the moves. The loop never loads an actual argument register, because C gives you no way to drop a value into `rdi` and hold it there across a call; the compiler owns the registers. So each move writes into a plain memory struct that mirrors the System V register file, the six integer registers and eight SSE registers laid out in order, and only once that image is built does a short assembly trampoline load every argument register from it in one shot and jump to the target. The C code moves bytes around in memory; the registers get their final values all at once, in `.text`, immediately before the call. That trampoline is the same one `ffi_call` has always used, so the plan changes when the placement is computed, not how the registers get loaded.
 
 The plan is plain data, and the thunk ships in the binary's read-only text like any other function. Nothing is ever both writable and executable, the same property closures already get from [static trampolines](https://blog.lazym.io/2021/07/29/Cast-a-Closure-to-a-Function-Pointer-How-libffi-closure-works/).
 
@@ -81,7 +81,7 @@ ffi_call_plan_invoke         5.1       2.7x
 ffi_call                    31.0       16x
 ```
 
-There's the headline. Calling that function the normal way through `ffi_call` costs about 16 times what a direct call to it costs. Through a prebuilt plan it's under 3 times. The plan is about 6x faster than `ffi_call`, and since they are the same library that is the API and nothing else.
+Calling that function the normal way through `ffi_call` costs about 16 times what a direct call to it costs. Through a prebuilt plan it's under 3 times. The plan is about 6x faster than `ffi_call`, and since it's the same library reached two ways, that gap is the API and nothing else.
 
 Most of what the plan removes is the per-call re-classification: `ffi_call` rebuilds the placement every time, while `invoke` just runs the prebuilt moves. On this shape the plan takes the thunk, so it skips the register image too and lands close to a plain call: about 3 ns of FFI overhead on top of a 2 ns call, against 29 ns for `ffi_call`.
 
@@ -89,7 +89,7 @@ Mixed integer and floating-point signatures don't take the thunk, because a 32-b
 
 ## Where the calls actually go
 
-A 5x number on one shape only matters if real programs use that shape, and call it often enough that building a plan once pays off. So I traced one.
+A 6x number on one shape only matters if real programs use that shape, and call it often enough that building a plan once pays off. So I traced one.
 
 GNOME Shell is a good stress test: the entire desktop UI is JavaScript calling into C through GObject Introspection, which calls through libffi. I attached an eBPF uprobe to `ffi_call` with [Whistler](https://github.com/atgreen/whistler) and watched for a while. The top signatures looked like this:
 
@@ -103,6 +103,6 @@ GNOME Shell is a good stress test: the entire desktop UI is JavaScript calling i
 
 Around 90% of the calls are pure 64-bit-GP, pointers and longs, which is the thunk path. Not a single by-value struct argument showed up in over a hundred thousand calls. And these are the same handful of signatures called over and over, exactly the shape that rewards building a plan once and invoking it forever. A binding like GObject Introspection already holds an `ffi_cif` per signature; a plan slots in right beside it.
 
-This all lives on the HEAD of the libffi git tree, not in any release, and it needs more testing before it's something to build on. Today it's x86-64 Linux only. Whether it's worth doing for other ABIs isn't clear: the payoff is proportional to how much per-call classification there is to skip, and that varies a lot between calling conventions.
+This all lives on the HEAD of the libffi git tree, not in any release, and it needs more testing before it's something to build on. The acceleration is x86-64 only, but the API is portable: everywhere else `ffi_call_plan_invoke` just calls `ffi_call`, so a binding can build a plan for every signature unconditionally and take the accelerated path where it exists, no `#ifdef` on its side. Whether the fast path is worth building for other ABIs isn't clear: the payoff is proportional to how much per-call classification there is to skip, and that varies a lot between calling conventions.
 
 The code is on GitHub: [libffi](https://github.com/libffi/libffi).
