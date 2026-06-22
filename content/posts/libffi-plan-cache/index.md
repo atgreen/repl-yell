@@ -107,6 +107,8 @@ This all lives on the HEAD of the libffi git tree, not in any release, and it ne
 
 The code is on GitHub: [libffi](https://github.com/libffi/libffi).
 
+Discuss on [Hacker News](https://news.ycombinator.com/item?id=48619207).
+
 ---
 
 *Edited for clarity after publishing: [`6fed8af`](https://github.com/atgreen/repl-yell/commit/6fed8af311fca8256b23673089da42e5beaf0cee).*
