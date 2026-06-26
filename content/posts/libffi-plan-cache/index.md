@@ -23,11 +23,11 @@ But function argument placement is a pure function of the signature. We can comp
 
 ## A plan
 
-The fix is a "plan": the placement compiled into a flat list of moves, a tiny bytecode for one signature. If `ffi_call` re-deriving the placement on every call is like interpreting a program by re-walking its syntax tree each time, the plan is the compiled bytecode: the tree-walk happens once, and every later call just runs the flat list. `build_plan` walks the argument types once, classifies each one the way the ABI rules say, and emits a move per piece: this 8-byte word goes in `rdi`, that 32-bit int gets sign-extended into `rsi`, this `double` lands in an SSE slot, that oversized thing spills to the stack. With the plan in hand, making the call is just running the moves. No re-classification.
+The fix is a "plan": the placement compiled into a flat list of moves, a tiny bytecode for one signature. If `ffi_call` re-deriving the placement on every call is like interpreting a program by re-walking its syntax tree each time, the plan is the compiled bytecode: the tree-walk happens once, and every later call just runs the flat list. `build_plan` walks the argument types once, classifies each one the way the ABI rules say, and emits a move per piece: an 8-byte word into `rdi`, a sign-extended 32-bit int into `rsi`, a `double` into an SSE slot, an oversized argument onto the stack. With the plan in hand, making the call is just running the moves. No re-classification.
 
 ![Building a call plan, then running it](plan-pipeline.svg)
 
-The opcodes are deliberately dumb. `GP64` copies a word into a general register; `SE8`/`SE16`/`SE32` sign-extend a narrow int; `SSE64`/`SSE32` move a float; `STACK` memcpys a spilled argument. A three-argument call compiles to three or four of them. Here's what two real signatures turn into:
+The opcodes are deliberately dumb. `GP64` copies a word into a general register. `SE8`, `SE16`, and `SE32` sign-extend a narrow int into one. A float moves with `SSE64` or `SSE32`, and `STACK` memcpys whatever spilled. A three-argument call compiles to three or four of them. Here's what two real signatures turn into:
 
 ```
 long (void *, void *, void *)    long (void *, int, void *)
@@ -60,7 +60,7 @@ ffi_call_plan_free(plan);
 
 ## The numbers
 
-This is the fair comparison: one libffi, the same function, reached three ways. A plain direct call to it, the same call through `ffi_call`, and the same call through a prebuilt plan. Same binary, same machine (a Core Ultra 7 255H), same `-O2`, so the only thing that differs between the two FFI rows is the API. The timed loop is just this, over and over:
+This is the fair comparison: one libffi, the same function, reached three ways. A plain direct call to it, the same call through `ffi_call`, and the same call through a prebuilt plan. The binary, the machine (a Core Ultra 7 255H), and the compiler flags (`-O2`) are all held fixed, so the only thing that differs between the two FFI rows is the API. The timed loop is just this, over and over:
 
 ```c
 ffi_type *at[] = { &ffi_type_pointer, &ffi_type_pointer, &ffi_type_pointer };
