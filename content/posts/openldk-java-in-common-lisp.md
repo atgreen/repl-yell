@@ -25,7 +25,7 @@ machine code. Java objects live in the same process and heap as the
 Lisp application.
 
 My goal is to make Java libraries feel at home in Common Lisp. For
-general Java execution, I expect HotSpot to be faster.
+general Java execution, HotSpot will be much faster.
 
 In the last few days, however, OpenLDK has gotten much better.  I've
 experimented with JVM-hosted languages and Spring Boot application
